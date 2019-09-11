@@ -74,7 +74,7 @@
 #define MARGIN						500
 
 //#define MIN_IDLE					1250 // 5ms
-#define MIN_IDLE					1000 // Lowered to work with GC/N64 to USB v2.2
+#define MIN_IDLE					1250 // Lowered to work with GC/N64 to USB v2.2
 
 #define DEFAULT_THRESHOLD			1750	// approx 7ms at /64 prescaler
 #define IMMEDIATE_THRESHOLD			1

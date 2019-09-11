@@ -3,12 +3,12 @@ AS=$(CC)
 LD=$(CC)
 
 VERSION=2.1
-CPU=atmega168
+CPU=atmega328p
 CFLAGS=-Wall -mmcu=$(CPU) -DF_CPU=16000000L -Os -DVISUAL_BUZZER -DVERSION_STR=\"$(VERSION)\"
 LDFLAGS=-mmcu=$(CPU) -Wl,-Map=gc_to_n64.map -Wl,--section-start=.endmarker=0x37fc
 HEXFILE=gc_to_n64b.hex
 AVRDUDE=avrdude
-AVRDUDE_CPU=m168
+AVRDUDE_CPU=atmega328p
 
 OBJS=main.o gamecube.o n64_isr.o mapper.o gamecube_mapping.o n64_mapping.o buzzer.o timer0.o eeprom.o sync.o lut.o gcn64_protocol.o menu.o
 
@@ -21,15 +21,9 @@ clean:
 gc_to_n64.elf: $(OBJS)
 	$(LD) $(OBJS) $(LDFLAGS) -o gc_to_n64.elf
 
-gc_to_n64_tmp.hex: gc_to_n64.elf
-	avr-objcopy -j .data -j .text -j .endmarker -O ihex gc_to_n64.elf gc_to_n64_tmp.hex
+$(HEXFILE): gc_to_n64.elf
+	avr-objcopy -j .data -j .text -j .endmarker -O ihex gc_to_n64.elf $(HEXFILE)
 	avr-size gc_to_n64.elf
-
-bootloader/siboot.hex:
-	$(MAKE) -C bootloader
-
-$(HEXFILE): gc_to_n64_tmp.hex bootloader/siboot.hex
-	srec_cat gc_to_n64_tmp.hex -I bootloader/siboot.hex -I -o $@ -I
 
 #
 # Extended byte: 0xF9
@@ -67,7 +61,7 @@ fuse:
 	$(AVRDUDE) -p $(AVRDUDE_CPU) -P usb -c avrispmkII -Ulock:w:$(LOCK):m
 
 flash: $(HEXFILE)
-	$(AVRDUDE) -p $(AVRDUDE_CPU) -P usb -c avrispmkII -Uflash:w:$(HEXFILE) -B 1.0 -F
+	$(AVRDUDE) -p $(AVRDUDE_CPU) -carduino -PCOM7 -b115200 -D -Uflash:w:$(HEXFILE) -B 1.0 -F
 
 reset:
 	$(AVRDUDE) -p $(AVRDUDE_CPU) -P usb -c avrispmkII -B 1.0 -F
