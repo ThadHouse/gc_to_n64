@@ -409,8 +409,6 @@ int main(void)
 
 	timerStart();
 
-	g_gcpad->init();
-
 	DEBUG_HIGH();
 	_delay_ms(500);
 
@@ -430,17 +428,30 @@ int main(void)
 			g_todo_save_mapping = 0;
 		}
 
+		//blips(1);
+
 		if (sync_may_poll()) {
+			//blips(1);
 			// Certain controllers do NOT like comms interruptions
 			// so ensure only 1 comm cycle happens per poll
 			switch (pad_state) {
 				case PAD_STATE_WAIT_ID:
+				//blips(1);
+					timerIntOff();
 					res = g_gcpad->init();
+					timerIntOn();
 					if (res != 0) continue;
+					// For some reason, the older wavebirds need a much longer delay here
+					// 5 is the minimum that works, so go with 10 for a safety factor
+					//_delay_ms(100);
 					pad_state = PAD_STATE_WAIT_STATUS;
 					break;
 				case PAD_STATE_WAIT_STATUS:
+					_delay_ms(50);
+				//blips(1);
+					timerIntOff();
 					res = g_gcpad->update(GAMECUBE_UPDATE_ORIGIN);
+					timerIntOn();
 					// Keep going until pad connects
 					if (res != 0) {
 						pad_state = PAD_STATE_WAIT_ID;
@@ -461,6 +472,7 @@ int main(void)
 					pad_state = PAD_STATE_RUNNING;
 					break;
 				case PAD_STATE_RUNNING:
+					//blips(1);
 					DEBUG_HIGH();
 					timerIntOff();
 					res = g_gcpad->update(GAMECUBE_UPDATE_NORMAL);
