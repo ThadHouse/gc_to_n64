@@ -62,6 +62,12 @@ const char endmarker[4] __attribute__((section(".endmarker")))  = { 0x12, 0x34, 
 
 void enter_bootloader(void);
 
+enum gc_pad_state {
+	PAD_STATE_WAIT_ID,
+	PAD_STATE_WAIT_STATUS,
+	PAD_STATE_RUNNING
+};
+
 Gamepad *g_gcpad;
 unsigned char gc_report[GC_REPORT_SIZE];
 
@@ -143,7 +149,7 @@ int domenu(struct mapping_controller_unit *gcs)
 {
 	static int start_seconds = 0;
 
-	if (gcs[MAP_GC_BTN_START].value) 
+	if (gcs[MAP_GC_BTN_START].value)
 	{
 		if (timerIsOver()) {
 			start_seconds++;
@@ -151,7 +157,7 @@ int domenu(struct mapping_controller_unit *gcs)
 				menumain();
 				return 1;
 			}
-		} 
+		}
 	}
 	else {
 		start_seconds = 0;
@@ -348,6 +354,7 @@ void n64_status_to_output(struct mapping_controller_unit *n64s, unsigned char vo
 int main(void)
 {
 	char res, read_fail_count = 0;
+	enum gc_pad_state pad_state = PAD_STATE_WAIT_ID;
 
 	g_gcpad = gamecubeGetGamepad();
 
@@ -407,28 +414,6 @@ int main(void)
 	DEBUG_HIGH();
 	_delay_ms(500);
 
-	/* Read from Gamecube controller. As long as this fails,
-	 * keep trying. We need the initial read to use as origin
-	 * position. */
-wait_for_controller:
-	while (0 != (res = g_gcpad->update(GAMECUBE_UPDATE_ORIGIN))) {
-		_delay_ms(16);
-	}
-	read_fail_count = 0;
-
-	g_gcpad->buildReport(gc_report);
-
-	// Learn the joystick origin to use
-	_delay_ms(16);
-	setOriginsFromReport(gc_report);
-
-	gc_report_to_mapping(gc_report, g_gamecube_status);
-
-
-	if (g_gamecube_status[MAP_GC_BTN_START].value) {
-		menumain(g_gamecube_status);
-	}
-
 	DEBUG_LOW();
 
 	sync_init();
@@ -446,46 +431,77 @@ wait_for_controller:
 		}
 
 		if (sync_may_poll()) {
-			DEBUG_HIGH();
-			timerIntOff();
-			res = g_gcpad->update(GAMECUBE_UPDATE_NORMAL);
-			timerIntOn();
-			DEBUG_LOW();
+			// Certain controllers do NOT like comms interruptions
+			// so ensure only 1 comm cycle happens per poll
+			switch (pad_state) {
+				case PAD_STATE_WAIT_ID:
+					res = g_gcpad->init();
+					if (res != 0) continue;
+					pad_state = PAD_STATE_WAIT_STATUS;
+					break;
+				case PAD_STATE_WAIT_STATUS:
+					res = g_gcpad->update(GAMECUBE_UPDATE_ORIGIN);
+					// Keep going until pad connects
+					if (res != 0) {
+						pad_state = PAD_STATE_WAIT_ID;
+						continue;
+					}
+					read_fail_count = 0;
+					g_gcpad->buildReport(gc_report);
 
-			if (res) {
-				read_fail_count++;
-				if (read_fail_count > READ_FAIL_LIMIT) {
-					blips(1);
-					goto wait_for_controller;
-				}
-			} else {
-				read_fail_count = 0;
+					// Learn the joystick origin to use
+					setOriginsFromReport(gc_report);
+
+					gc_report_to_mapping(gc_report, g_gamecube_status);
+
+
+					if (g_gamecube_status[MAP_GC_BTN_START].value) {
+						menumain(g_gamecube_status);
+					}
+					pad_state = PAD_STATE_RUNNING;
+					break;
+				case PAD_STATE_RUNNING:
+					DEBUG_HIGH();
+					timerIntOff();
+					res = g_gcpad->update(GAMECUBE_UPDATE_NORMAL);
+					timerIntOn();
+					DEBUG_LOW();
+
+					if (res) {
+						read_fail_count++;
+						if (read_fail_count > READ_FAIL_LIMIT) {
+							pad_state = PAD_STATE_WAIT_ID;
+							continue;
+						}
+					} else {
+						read_fail_count = 0;
+					}
+
+					if (g_gcpad->changed()) {
+						DEBUG_HIGH();
+						// Read the gamepad
+						g_gcpad->buildReport(gc_report);
+
+						// Convert the data we got from the gamepad reader
+						// to a mapping structure.
+						gc_report_to_mapping(gc_report, g_gamecube_status);
+
+						// Maybe enter configuration menu mode. If we did,
+						// 1 is returned.
+
+						// Perform mapping (conversion), copying data at appropriate
+						// places in the output structure (n64 status)
+						mapper_copy(current_mapping, g_gamecube_status, g_n64_status);
+
+						// Convert the N64 status mapping structure to a raw buffer we can send
+						// to the console in interrupt context.
+						n64_status_to_output(g_n64_status, n64_use_buf1 ? n64_tx_buf0 : n64_tx_buf1);
+
+						n64_use_buf1 = !n64_use_buf1;
+						DEBUG_LOW();
+					}
+					break;
 			}
-
-			if (g_gcpad->changed()) {
-				DEBUG_HIGH();
-				// Read the gamepad
-				g_gcpad->buildReport(gc_report);
-
-				// Convert the data we got from the gamepad reader
-				// to a mapping structure.
-				gc_report_to_mapping(gc_report, g_gamecube_status);
-
-				// Maybe enter configuration menu mode. If we did,
-				// 1 is returned.
-
-				// Perform mapping (conversion), copying data at appropriate
-				// places in the output structure (n64 status)
-				mapper_copy(current_mapping, g_gamecube_status, g_n64_status);
-
-				// Convert the N64 status mapping structure to a raw buffer we can send
-				// to the console in interrupt context.
-				n64_status_to_output(g_n64_status, n64_use_buf1 ? n64_tx_buf0 : n64_tx_buf1);
-
-				n64_use_buf1 = !n64_use_buf1;
-				DEBUG_LOW();
-			}
-
 			domenu(g_gamecube_status);
 
 		}

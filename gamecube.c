@@ -25,7 +25,7 @@
 #include "gcn64_protocol.h"
 
 /*********** prototypes *************/
-static void gamecubeInit(void);
+static char gamecubeInit(void);
 static char gamecubeUpdate(char);
 static char gamecubeChanged(void);
 static void gamecubeBuildReport(unsigned char *reportBuffer);
@@ -36,11 +36,11 @@ static unsigned char last_built_report[GC_REPORT_SIZE];
 /* What was most recently sent to the host */
 static unsigned char last_sent_report[GC_REPORT_SIZE];
 
-static void gamecubeInit(void)
+static char gamecubeInit(void)
 {
-	unsigned char sreg;
-	sreg = SREG;
-	cli();
+	//unsigned char sreg;
+	//sreg = SREG;
+	//cli();
 
 	DDRB |= 0x02; // Bit 1 out
 	PORTB &= ~0x02; // 0
@@ -52,9 +52,20 @@ static void gamecubeInit(void)
 	// pin act as an open-drain output.
 	GC_DATA_PORT &= ~GC_DATA_BIT;
 
-	SREG = sreg;
+	unsigned char tmp=0;
+	unsigned char count;
 
-	gamecubeUpdate(GAMECUBE_UPDATE_ORIGIN);
+	/* The GetID command. This is required for the Nintendo Wavebird to work... */
+	tmp = GC_GETID;
+	count = gcn64_transaction(&tmp, 1);
+	if (count != GC_GETID_REPLY_LENGTH) {
+		return 1;
+	}
+	return 0;
+
+	//SREG = sreg;
+
+	// gamecubeUpdate(GAMECUBE_UPDATE_ORIGIN);
 }
 
 void gc_decodeAnswer()
